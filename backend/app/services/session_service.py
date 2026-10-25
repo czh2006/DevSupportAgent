@@ -2,9 +2,13 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.schemas.session import SessionCreate, SessionStatus
-from app.storage.models import TroubleshootingContext, TroubleshootingSession
 from app.schemas.context import TroubleshootingContextUpsert
 from app.storage.models import TroubleshootingContext
+from app.storage.models import (
+    Message,
+    TroubleshootingContext,
+    TroubleshootingSession,
+)
 
 
 class SessionService:
@@ -124,3 +128,20 @@ class SessionService:
         self.db_session.refresh(troubleshooting_context)
 
         return troubleshooting_context
+
+    def get_message(
+        self,
+        session_id: str,
+        message_id: int,
+    ) -> Message:
+        self.get_session(session_id)
+
+        message = self.db_session.get(Message, message_id)
+
+        if message is None or message.session_id != session_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="会话消息不存在",
+            )
+
+        return message

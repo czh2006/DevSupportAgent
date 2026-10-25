@@ -222,3 +222,123 @@ def test_returns_404_when_context_is_missing(
     assert response.json() == {
         "detail": "排障上下文尚未填写",
     }
+
+def test_extracts_context_candidate_from_natural_language(
+    client: TestClient,
+) -> None:
+    created_session = create_session(
+        client,
+        title="从自然语言中提取排障上下文",
+    )
+
+    message_response = client.post(
+        f"/sessions/{created_session['id']}/messages",
+        json={
+            "content": (
+                "我在生产环境调用 v1 接口，返回 429，"
+                "请求 ID 是 req_429_demo_001。"
+            ),
+        },
+    )
+
+    assert message_response.status_code == 201
+
+    message_id = message_response.json()["id"]
+
+    suggestion_response = client.post(
+        f"/sessions/{created_session['id']}/messages/"
+        f"{message_id}/context-suggestion",
+    )
+
+    assert suggestion_response.status_code == 200
+
+    suggestion = suggestion_response.json()
+    candidate = suggestion["candidate"]
+
+    assert suggestion["requires_confirmation"] is True
+    assert candidate["api_version"] == "v1"
+    assert candidate["environment"] == "production"
+    assert candidate["request_id"] == "req_429_demo_001"
+    assert candidate["http_status_code"] == 429
+    assert candidate["missing_fields"] == []
+
+    context_response = client.get(
+        f"/sessions/{created_session['id']}/context",
+    )
+
+    assert context_response.status_code == 404
+
+
+def test_returns_missing_fields_for_ambiguous_message(
+    client: TestClient,
+) -> None:
+    created_session = create_session(
+        client,
+        title="信息不足的自然语言消息",
+    )
+
+    message_response = client.post(
+        f"/sessions/{created_session['id']}/messages",
+        json={
+            "content": "接口似乎异常了，麻烦帮我看看。",
+        },
+    )
+
+    assert message_response.status_code == 201
+
+    message_id = message_response.json()["id"]
+
+    suggestion_response = client.post(
+        f"/sessions/{created_session['id']}/messages/"
+        f"{message_id}/context-suggestion",
+    )
+
+    assert suggestion_response.status_code == 200
+
+    candidate = suggestion_response.json()["candidate"]
+
+    assert candidate["api_version"] is None
+    assert candidate["environment"] is None
+    assert candidate["request_id"] is None
+    assert candidate["http_status_code"] is None
+
+    assert set(candidate["missing_fields"]) == {
+        "api_version",
+        "environment",
+        "request_id",
+        "http_status_code",
+    }
+
+
+def test_cannot_extract_message_from_another_session(
+    client: TestClient,
+) -> None:
+    first_session = create_session(
+        client,
+        title="第一个会话",
+    )
+    second_session = create_session(
+        client,
+        title="第二个会话",
+    )
+
+    message_response = client.post(
+        f"/sessions/{first_session['id']}/messages",
+        json={
+            "content": "生产环境返回 429。",
+        },
+    )
+
+    assert message_response.status_code == 201
+
+    message_id = message_response.json()["id"]
+
+    response = client.post(
+        f"/sessions/{second_session['id']}/messages/"
+        f"{message_id}/context-suggestion",
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "会话消息不存在",
+    }
