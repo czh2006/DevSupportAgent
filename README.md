@@ -31,3 +31,13 @@ python -m uvicorn app.main:app --reload
 健康检查：http://127.0.0.1:8000/health
 
 接口文档：http://127.0.0.1:8000/docs
+
+## 运行测试
+
+进入后端目录后执行：
+
+```powershell
+python -m pytest -v
+```
+
+测试使用独立的内存 SQLite 数据库，不会修改本地运行数据。
