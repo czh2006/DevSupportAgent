@@ -10,6 +10,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[2]
 class Settings(BaseSettings):
     app_name: str = "DevSupport Agent"
     app_env: Literal["development", "test", "production"] = "development"
+    database_path: Path = BACKEND_DIR / "data" / "devsupport.db"
 
     model_config = SettingsConfigDict(
         env_file=BACKEND_DIR / ".env",
