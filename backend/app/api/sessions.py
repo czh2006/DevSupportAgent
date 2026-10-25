@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.schemas.session import SessionCreate, SessionResponse
 from app.storage.database import get_db
+from app.services.session_service import SessionService
 from app.storage.models import TroubleshootingSession
 
 
@@ -25,16 +26,9 @@ def create_session(
     payload: SessionCreate,
     db_session: DatabaseSession,
 ) -> TroubleshootingSession:
-    troubleshooting_session = TroubleshootingSession(
-        title=payload.title,
-        problem_description=payload.problem_description,
-    )
+    session_service = SessionService(db_session)
 
-    db_session.add(troubleshooting_session)
-    db_session.commit()
-    db_session.refresh(troubleshooting_session)
-
-    return troubleshooting_session
+    return session_service.create_session(payload)
 
 
 @router.get(
@@ -45,15 +39,18 @@ def get_session(
     session_id: str,
     db_session: DatabaseSession,
 ) -> TroubleshootingSession:
-    troubleshooting_session = db_session.get(
-        TroubleshootingSession,
-        session_id,
-    )
+    session_service = SessionService(db_session)
 
-    if troubleshooting_session is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="排障会话不存在",
-        )
+    return session_service.get_session(session_id)
 
-    return troubleshooting_session
+@router.post(
+    "/{session_id}/start",
+    response_model=SessionResponse,
+)
+def start_investigation(
+    session_id: str,
+    db_session: DatabaseSession,
+) -> TroubleshootingSession:
+    session_service = SessionService(db_session)
+
+    return session_service.start_investigation(session_id)

@@ -110,3 +110,34 @@ def test_rejects_message_for_missing_session(client: TestClient) -> None:
     assert response.json() == {
         "detail": "排障会话不存在",
     }
+
+def test_starts_investigation_only_once(client: TestClient) -> None:
+    created_session = create_session(
+        client,
+        title="需要开始排查的会话",
+    )
+
+    start_response = client.post(
+        f"/sessions/{created_session['id']}/start",
+    )
+
+    assert start_response.status_code == 200
+    assert start_response.json()["status"] == "investigating"
+
+    duplicate_start_response = client.post(
+        f"/sessions/{created_session['id']}/start",
+    )
+
+    assert duplicate_start_response.status_code == 409
+    assert duplicate_start_response.json() == {
+        "detail": "当前会话不能开始排查",
+    }
+
+
+def test_cannot_start_missing_session(client: TestClient) -> None:
+    response = client.post("/sessions/does-not-exist/start")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "排障会话不存在",
+    }
