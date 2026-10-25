@@ -32,7 +32,7 @@ def field_matches_evidence(
     field_name: str,
     value: object,
     evidence: str,
-) -> bool:
+) -> bool | None:
     evidence = evidence.strip()
 
     if not evidence:
@@ -79,13 +79,16 @@ def field_matches_evidence(
         return re.search(pattern, evidence) is not None
 
     if field_name == "environment":
+        if value not in set(RuntimeEnvironment):
+            return False
+
         expected_environment = ENVIRONMENT_ALIASES.get(
             evidence.lower(),
         )
 
-        return (
-            expected_environment is not None
-            and expected_environment == value
-        )
+        if expected_environment is None:
+            return None
+
+        return expected_environment == value
 
     return False

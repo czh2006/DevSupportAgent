@@ -21,6 +21,13 @@ class ContextCandidate(BaseModel):
     confidence: dict[str, float] = Field(default_factory=dict)
     missing_fields: list[str] = Field(default_factory=list)
     rejected_fields: dict[str, str] = Field(default_factory=dict)
+    unverified_fields: list[str] = Field(default_factory=list)
+
+    conflicts: dict[str, dict[str, str | int]] = Field(
+        default_factory=dict,
+    )
+
+    extraction_warnings: list[str] = Field(default_factory=list)
 
 class LlmContextExtraction(BaseModel):
     model_config = ConfigDict(extra="forbid")

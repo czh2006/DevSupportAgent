@@ -42,6 +42,7 @@ class LlmContextExtractor:
         sources: dict[str, ExtractionSource] = {}
         confidence: dict[str, float] = {}
         rejected_fields: dict[str, str] = {}
+        unverified_fields: list[str] = []
 
         for field_name, value in values.items():
             if value is None:
@@ -61,12 +62,14 @@ class LlmContextExtractor:
                     "模型提供的原文依据不在用户消息中"
                 )
                 continue
-            
-            if not field_matches_evidence(
+
+            evidence_matches = field_matches_evidence(
                 field_name,
                 value,
                 evidence_text,
-            ):
+            )
+
+            if evidence_matches is False:
                 accepted_values[field_name] = None
                 rejected_fields[field_name] = (
                     "候选值与原文依据不一致"
@@ -82,6 +85,9 @@ class LlmContextExtractor:
                 accepted_values[field_name] = None
                 rejected_fields[field_name] = "模型置信度不在 0 到 1 范围内"
                 continue
+
+            if evidence_matches is None:
+                unverified_fields.append(field_name)
 
             accepted_values[field_name] = value
             evidence[field_name] = evidence_text
@@ -104,4 +110,5 @@ class LlmContextExtractor:
             confidence=confidence,
             missing_fields=missing_fields,
             rejected_fields=rejected_fields,
+            unverified_fields=unverified_fields,
         )

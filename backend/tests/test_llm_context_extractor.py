@@ -199,3 +199,21 @@ def test_rejects_blank_evidence(evidence: str) -> None:
     assert candidate.rejected_fields == {
         "http_status_code": "模型未提供原文依据",
     }
+
+def test_unknown_environment_alias_is_only_an_unverified_candidate() -> None:
+    fake_model = FakeStructuredContextModel(
+        response=LlmContextExtraction(
+            environment=RuntimeEnvironment.PRODUCTION,
+            evidence={"environment": "正式服"},
+            confidence={"environment": 0.99},
+        ),
+    )
+
+    candidate = LlmContextExtractor(fake_model).extract(
+        "正式服调用失败",
+    )
+
+    assert candidate.environment == RuntimeEnvironment.PRODUCTION
+    assert candidate.evidence["environment"] == "正式服"
+    assert candidate.unverified_fields == ["environment"]
+    assert candidate.rejected_fields == {}

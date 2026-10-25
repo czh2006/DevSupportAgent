@@ -4,6 +4,15 @@ from langchain_openai import ChatOpenAI
 from app.core.config import settings
 from app.schemas.context_suggestion import LlmContextExtraction
 
+import httpx
+
+from langchain_core.exceptions import OutputParserException
+from langchain_core.runnables import Runnable
+from openai import APIError, APITimeoutError
+from pydantic import ValidationError
+
+from app.extraction.errors import LlmExtractionError
+
 
 CONTEXT_EXTRACTION_PROMPT = """
 你是开发者故障排查系统中的信息提取组件。
@@ -30,10 +39,39 @@ CONTEXT_EXTRACTION_PROMPT = """
     例如“线上”“prod”“预发环境”，不要引用整句话。
 11. http_status_code 和 api_version 的证据中，
     不要混入其他请求的状态码或版本。
+12. 用户可能使用词表之外的环境说法。明确指现有环境时，
+    可以给出标准枚举值，并保留原始 evidence。
+    如果可能是 QA、开发集群等独立环境，或含义模糊，
+    environment 返回 null，并在 evidence 的 environment 项保留原词。
 
 用户输入：
 {content}
 """
+
+class ContextModelAdapter:
+    def __init__(
+        self,
+        chain: Runnable[dict[str, str], LlmContextExtraction],
+    ) -> None:
+        self.chain = chain
+
+    def invoke(
+        self,
+        payload: dict[str, str],
+    ) -> LlmContextExtraction:
+        try:
+            result = self.chain.invoke(payload)
+
+            return LlmContextExtraction.model_validate(result)
+
+        except (APITimeoutError, httpx.TimeoutException) as exc:
+            raise LlmExtractionError("llm_timeout") from exc
+
+        except (APIError, httpx.HTTPError) as exc:
+            raise LlmExtractionError("llm_unavailable") from exc
+
+        except (OutputParserException, ValidationError) as exc:
+            raise LlmExtractionError("llm_invalid_output") from exc
 
 
 def create_llm_context_model():
@@ -64,4 +102,4 @@ def create_llm_context_model():
         LlmContextExtraction,
     )
 
-    return prompt | structured_model
+    return ContextModelAdapter(prompt | structured_model)

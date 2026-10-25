@@ -9,6 +9,9 @@ from sqlalchemy.pool import StaticPool
 from app.main import app
 from app.storage.database import Base, get_db
 
+from app.extraction.context_extractor import RuleContextExtractor
+from app.extraction.pipeline import get_context_extractor
+
 
 @pytest.fixture
 def client() -> Generator[TestClient, None, None]:
@@ -26,6 +29,9 @@ def client() -> Generator[TestClient, None, None]:
             yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_context_extractor] = (
+        RuleContextExtractor
+    )
 
     test_client = TestClient(app)
 
