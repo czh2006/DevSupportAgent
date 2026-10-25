@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import DateTime, ForeignKey, String, Text,Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.storage.database import Base
@@ -74,4 +74,40 @@ class Message(Base):
         DateTime,
         nullable=False,
         default=current_utc_time,
+    )
+
+class TroubleshootingContext(Base):
+    __tablename__ = "troubleshooting_contexts"
+
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("troubleshooting_sessions.id"),
+        primary_key=True,
+    )
+
+    api_version: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+
+    environment: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+    )
+
+    request_id: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        index=True,
+    )
+
+    http_status_code: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=current_utc_time,
+        onupdate=current_utc_time,
     )

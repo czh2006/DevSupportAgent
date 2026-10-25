@@ -6,7 +6,7 @@ from app.api.sessions import router as sessions_router
 from app.core.config import settings
 from app.storage.database import Base, engine
 from app.api.messages import router as messages_router
-
+from app.api.context import router as context_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,6 +31,7 @@ app = FastAPI(
 
 app.include_router(sessions_router)
 app.include_router(messages_router)
+app.include_router(context_router)
 
 
 @app.get("/health")

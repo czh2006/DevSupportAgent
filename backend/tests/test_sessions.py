@@ -141,3 +141,84 @@ def test_cannot_start_missing_session(client: TestClient) -> None:
     assert response.json() == {
         "detail": "排障会话不存在",
     }
+
+def test_upserts_context_without_erasing_existing_fields(
+    client: TestClient,
+) -> None:
+    created_session = create_session(
+        client,
+        title="需要补充上下文的会话",
+    )
+
+    first_response = client.put(
+        f"/sessions/{created_session['id']}/context",
+        json={
+            "api_version": "v1",
+            "environment": "staging",
+            "http_status_code": 429,
+        },
+    )
+
+    assert first_response.status_code == 200
+    assert first_response.json()["api_version"] == "v1"
+    assert first_response.json()["environment"] == "staging"
+    assert first_response.json()["http_status_code"] == 429
+    assert first_response.json()["request_id"] is None
+
+    second_response = client.put(
+        f"/sessions/{created_session['id']}/context",
+        json={
+            "request_id": "req_429_demo_001",
+        },
+    )
+
+    assert second_response.status_code == 200
+
+    context = second_response.json()
+    assert context["api_version"] == "v1"
+    assert context["environment"] == "staging"
+    assert context["http_status_code"] == 429
+    assert context["request_id"] == "req_429_demo_001"
+
+
+def test_rejects_empty_or_invalid_context(
+    client: TestClient,
+) -> None:
+    created_session = create_session(
+        client,
+        title="验证上下文字段的会话",
+    )
+
+    empty_response = client.put(
+        f"/sessions/{created_session['id']}/context",
+        json={},
+    )
+
+    assert empty_response.status_code == 422
+
+    invalid_status_code_response = client.put(
+        f"/sessions/{created_session['id']}/context",
+        json={
+            "http_status_code": 99,
+        },
+    )
+
+    assert invalid_status_code_response.status_code == 422
+
+
+def test_returns_404_when_context_is_missing(
+    client: TestClient,
+) -> None:
+    created_session = create_session(
+        client,
+        title="尚未填写上下文的会话",
+    )
+
+    response = client.get(
+        f"/sessions/{created_session['id']}/context",
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": "排障上下文尚未填写",
+    }
