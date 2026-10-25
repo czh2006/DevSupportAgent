@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+import pytest
 
 
 def create_session(client: TestClient, title: str) -> dict:
@@ -267,6 +268,19 @@ def test_extracts_context_candidate_from_natural_language(
     )
 
     assert context_response.status_code == 404
+    assert candidate["sources"] == {
+        "api_version": "rule",
+        "environment": "rule",
+        "request_id": "rule",
+        "http_status_code": "rule",
+    }
+
+    assert candidate["confidence"] == {
+        "api_version": 1.0,
+        "environment": 1.0,
+        "request_id": 1.0,
+        "http_status_code": 1.0,
+    }
 
 
 def test_returns_missing_fields_for_ambiguous_message(
@@ -301,6 +315,8 @@ def test_returns_missing_fields_for_ambiguous_message(
     assert candidate["environment"] is None
     assert candidate["request_id"] is None
     assert candidate["http_status_code"] is None
+    assert candidate["sources"] == {}
+    assert candidate["confidence"] == {}
 
     assert set(candidate["missing_fields"]) == {
         "api_version",
@@ -342,3 +358,55 @@ def test_cannot_extract_message_from_another_session(
     assert response.json() == {
         "detail": "会话消息不存在",
     }
+
+@pytest.mark.parametrize(
+    ("content", "expected_request_id", "expected_status_code"),
+    [
+        (
+            "调用失败，trace 是 req_429_demo_001。",
+            "req_429_demo_001",
+            None,
+        ),
+        (
+            "接口报错 429，请求编号为 req_rate_limit_002。",
+            "req_rate_limit_002",
+            429,
+        ),
+        (
+            "HTTP status code: 503，request id=req_gateway_003",
+            "req_gateway_003",
+            503,
+        ),
+    ],
+)
+def test_extracts_stable_identifiers_from_multiple_phrasings(
+    client: TestClient,
+    content: str,
+    expected_request_id: str,
+    expected_status_code: int | None,
+) -> None:
+    created_session = create_session(
+        client,
+        title="验证多种自然语言表达",
+    )
+
+    message_response = client.post(
+        f"/sessions/{created_session['id']}/messages",
+        json={"content": content},
+    )
+
+    message_id = message_response.json()["id"]
+
+    suggestion_response = client.post(
+        f"/sessions/{created_session['id']}/messages/"
+        f"{message_id}/context-suggestion",
+    )
+
+    assert suggestion_response.status_code == 200
+
+    candidate = suggestion_response.json()["candidate"]
+
+    assert candidate["request_id"] == expected_request_id
+    assert candidate["http_status_code"] == expected_status_code
+    assert candidate["sources"]["request_id"] == "rule"
+    assert candidate["confidence"]["request_id"] == 1.0

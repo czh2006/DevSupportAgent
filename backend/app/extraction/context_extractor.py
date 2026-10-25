@@ -1,7 +1,11 @@
 import re
+from typing import Protocol
 
 from app.schemas.context import RuntimeEnvironment
-from app.schemas.context_suggestion import ContextCandidate
+from app.schemas.context_suggestion import (
+    ContextCandidate,
+    ExtractionSource,
+)
 
 
 REQUEST_ID_PATTERN = re.compile(
@@ -50,94 +54,148 @@ REQUIRED_CONTEXT_FIELDS = (
 )
 
 
+class ContextExtractor(Protocol):
+    def extract(self, content: str) -> ContextCandidate:
+        """从用户自然语言中提取排障上下文候选项。"""
+
+
+class RuleContextExtractor:
+    def extract(self, content: str) -> ContextCandidate:
+        evidence: dict[str, str] = {}
+        sources: dict[str, ExtractionSource] = {}
+        confidence: dict[str, float] = {}
+
+        request_id, request_id_evidence = self._extract_request_id(content)
+        self._add_metadata(
+            field_name="request_id",
+            evidence_text=request_id_evidence,
+            evidence=evidence,
+            sources=sources,
+            confidence=confidence,
+        )
+
+        http_status_code, http_status_evidence = (
+            self._extract_http_status_code(content)
+        )
+        self._add_metadata(
+            field_name="http_status_code",
+            evidence_text=http_status_evidence,
+            evidence=evidence,
+            sources=sources,
+            confidence=confidence,
+        )
+
+        api_version, api_version_evidence = self._extract_api_version(content)
+        self._add_metadata(
+            field_name="api_version",
+            evidence_text=api_version_evidence,
+            evidence=evidence,
+            sources=sources,
+            confidence=confidence,
+        )
+
+        environment, environment_evidence = self._extract_environment(
+            content,
+        )
+        self._add_metadata(
+            field_name="environment",
+            evidence_text=environment_evidence,
+            evidence=evidence,
+            sources=sources,
+            confidence=confidence,
+        )
+
+        values = {
+            "api_version": api_version,
+            "environment": environment,
+            "request_id": request_id,
+            "http_status_code": http_status_code,
+        }
+
+        missing_fields = [
+            field_name
+            for field_name in REQUIRED_CONTEXT_FIELDS
+            if values[field_name] is None
+        ]
+
+        return ContextCandidate(
+            api_version=api_version,
+            environment=environment,
+            request_id=request_id,
+            http_status_code=http_status_code,
+            evidence=evidence,
+            sources=sources,
+            confidence=confidence,
+            missing_fields=missing_fields,
+        )
+
+    @staticmethod
+    def _add_metadata(
+        field_name: str,
+        evidence_text: str | None,
+        evidence: dict[str, str],
+        sources: dict[str, ExtractionSource],
+        confidence: dict[str, float],
+    ) -> None:
+        if evidence_text is None:
+            return
+
+        evidence[field_name] = evidence_text
+        sources[field_name] = ExtractionSource.RULE
+        confidence[field_name] = 1.0
+
+    @staticmethod
+    def _extract_request_id(
+        content: str,
+    ) -> tuple[str | None, str | None]:
+        match = REQUEST_ID_PATTERN.search(content)
+
+        if match is None:
+            match = REQUEST_ID_FALLBACK_PATTERN.search(content)
+
+        if match is None:
+            return None, None
+
+        return match.group(1), match.group(0)
+
+    @staticmethod
+    def _extract_http_status_code(
+        content: str,
+    ) -> tuple[int | None, str | None]:
+        match = HTTP_STATUS_PATTERN.search(content)
+
+        if match is None:
+            return None, None
+
+        return int(match.group(1)), match.group(0)
+
+    @staticmethod
+    def _extract_api_version(
+        content: str,
+    ) -> tuple[str | None, str | None]:
+        match = API_VERSION_PATTERN.search(content)
+
+        if match is None:
+            return None, None
+
+        return match.group(1).lower(), match.group(0)
+
+    @staticmethod
+    def _extract_environment(
+        content: str,
+    ) -> tuple[RuntimeEnvironment | None, str | None]:
+        normalized_content = content.lower()
+
+        for environment, keywords in ENVIRONMENT_KEYWORDS:
+            for keyword in keywords:
+                if keyword in normalized_content:
+                    return environment, keyword
+
+        return None, None
+
+
+rule_context_extractor: ContextExtractor = RuleContextExtractor()
+
+
 def extract_context_candidate(content: str) -> ContextCandidate:
-    evidence: dict[str, str] = {}
-
-    request_id, request_id_evidence = extract_request_id(content)
-    if request_id_evidence is not None:
-        evidence["request_id"] = request_id_evidence
-
-    http_status_code, http_status_evidence = extract_http_status_code(
-        content,
-    )
-    if http_status_evidence is not None:
-        evidence["http_status_code"] = http_status_evidence
-
-    api_version, api_version_evidence = extract_api_version(content)
-    if api_version_evidence is not None:
-        evidence["api_version"] = api_version_evidence
-
-    environment, environment_evidence = extract_environment(content)
-    if environment_evidence is not None:
-        evidence["environment"] = environment_evidence
-
-    values = {
-        "api_version": api_version,
-        "environment": environment,
-        "request_id": request_id,
-        "http_status_code": http_status_code,
-    }
-
-    missing_fields = [
-        field_name
-        for field_name in REQUIRED_CONTEXT_FIELDS
-        if values[field_name] is None
-    ]
-
-    return ContextCandidate(
-        api_version=api_version,
-        environment=environment,
-        request_id=request_id,
-        http_status_code=http_status_code,
-        evidence=evidence,
-        missing_fields=missing_fields,
-    )
-
-
-def extract_request_id(
-    content: str,
-) -> tuple[str | None, str | None]:
-    match = REQUEST_ID_PATTERN.search(content)
-
-    if match is None:
-        match = REQUEST_ID_FALLBACK_PATTERN.search(content)
-
-    if match is None:
-        return None, None
-
-    return match.group(1), match.group(0)
-
-
-def extract_http_status_code(
-    content: str,
-) -> tuple[int | None, str | None]:
-    match = HTTP_STATUS_PATTERN.search(content)
-
-    if match is None:
-        return None, None
-
-    return int(match.group(1)), match.group(0)
-
-
-def extract_api_version(
-    content: str,
-) -> tuple[str | None, str | None]:
-    match = API_VERSION_PATTERN.search(content)
-
-    if match is None:
-        return None, None
-
-    return match.group(1).lower(), match.group(0)
-
-
-def extract_environment(
-    content: str,
-) -> tuple[RuntimeEnvironment | None, str | None]:
-    normalized_content = content.lower()
-
-    for environment, keywords in ENVIRONMENT_KEYWORDS:
-        for keyword in keywords:
-            if keyword in normalized_content:
-                return environment, keyword
-
-    return None, None
+    return rule_context_extractor.extract(content)
