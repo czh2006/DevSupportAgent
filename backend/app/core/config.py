@@ -20,6 +20,18 @@ class Settings(BaseSettings):
         min_length=1,
         max_length=128,
     )
+    mcp_log_url: str = "http://127.0.0.1:8012/mcp"
+
+    mcp_log_project_id: str = Field(
+        default="demo-project",
+        min_length=1,
+    )
+
+    mcp_log_timeout_seconds: float = Field(
+        default=5.0,
+        gt=0,
+        le=60,
+    )
 
     model_config = SettingsConfigDict(
         env_file=BACKEND_DIR / ".env",
