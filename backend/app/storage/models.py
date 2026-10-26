@@ -170,3 +170,44 @@ class AgentRun(Base):
         DateTime,
         nullable=True,
     )
+
+class AgentRunEvent(Base):
+    __tablename__ = "agent_run_events"
+
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+        autoincrement=True,
+    )
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_runs.id"),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+    )
+    step: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    operation: Mapped[str | None] = mapped_column(
+        String(80),
+        nullable=True,
+    )
+    outcome: Mapped[str | None] = mapped_column(
+        String(40),
+        nullable=True,
+    )
+    error_code: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    duration_ms: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+    )

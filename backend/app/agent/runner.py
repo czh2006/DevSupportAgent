@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.integrations.mcp_logs import LogToolError
 from app.schemas.log_evidence import LogEvidenceResult
+from app.agent.events import EventSink, observe_call
 
 
 class AgentResult(BaseModel):
@@ -63,6 +64,8 @@ class TroubleshootingAgent:
         question: str,
         request_id: str | None,
         environment: str | None,
+        *,
+        on_event: EventSink | None = None,
     ) -> AgentResult:
         evidence = None
         tool_calls = 0
@@ -118,10 +121,14 @@ class TroubleshootingAgent:
                     [get_request_log]
                 )
 
-                for _ in range(3):
-                    reply = await bound_model.ainvoke(
-                        messages
-                    )
+                for model_step in range(1, 4):
+                    async with observe_call(
+                        "model",
+                        model_step,
+                        on_event,
+                        operation="chat_completion",
+                    ):
+                        reply = await bound_model.ainvoke(messages)
 
                     if (
                         not isinstance(reply, AIMessage)
@@ -183,13 +190,16 @@ class TroubleshootingAgent:
 
                     tool_calls += 1
 
-                    data = await get_request_log.ainvoke(
-                        call["args"]
-                    )
-
-                    evidence = (
-                        LogEvidenceResult.model_validate(data)
-                    )
+                    async with observe_call(
+                        "tool",
+                        tool_calls,
+                        on_event,
+                        operation="get_request_log",
+                    ):
+                        data = await get_request_log.ainvoke(
+                            call["args"]
+                        )
+                        evidence = LogEvidenceResult.model_validate(data)
 
                     if evidence.status == "not_found":
                         return finish(

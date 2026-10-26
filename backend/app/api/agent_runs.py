@@ -27,6 +27,9 @@ from starlette.concurrency import run_in_threadpool
 
 from app.schemas.agent_run import AgentRunResponse
 from app.services.agent_run_service import AgentRunService
+from app.agent.events import AgentEvent
+from app.schemas.agent_event import AgentEventResponse
+from app.services.agent_event_service import AgentEventService
 
 
 router = APIRouter(
@@ -123,12 +126,21 @@ async def run_agent(
     )
 
     started = perf_counter()
+    event_service = AgentEventService(db)
+
+    async def on_event(event: AgentEvent) -> None:
+        await run_in_threadpool(
+            event_service.append,
+            run_id,
+            event,
+        )
 
     try:
         result = await agent.run(
             question=payload.question,
             request_id=context.request_id,
             environment=context.environment,
+            on_event=on_event,
         )
 
     except Exception:
@@ -175,3 +187,15 @@ def get_agent_run(
         session_id,
         run_id,
     )
+
+
+@router.get(
+    "/{session_id}/agent-runs/{run_id}/events",
+    response_model=list[AgentEventResponse],
+)
+def get_agent_events(
+    session_id: str,
+    run_id: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> list[AgentEventResponse]:
+    return AgentEventService(db).list(session_id, run_id)

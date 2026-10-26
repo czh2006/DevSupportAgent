@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 
@@ -66,6 +66,7 @@ def test_agent_receives_saved_context(client, fake_agent):
         question="为什么请求失败？",
         request_id=REQUEST_ID,
         environment="local",
+        on_event=ANY,
     )
 
 
@@ -90,6 +91,7 @@ def test_missing_context_reaches_agent_as_none(
         question="帮我排查",
         request_id=None,
         environment=None,
+        on_event=ANY,
     )
 
 

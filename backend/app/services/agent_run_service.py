@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.agent.runner import AgentResult
 from app.schemas.agent_run import AgentRunResponse
-from app.storage.models import AgentRun, current_utc_time
+from app.storage.models import AgentRun, AgentRunEvent, current_utc_time
 
 
 class AgentRunService:
@@ -32,6 +32,12 @@ class AgentRunService:
                 created_at=current_utc_time(),
             )
         )
+        self.db.flush()
+        self.db.add(AgentRunEvent(
+            run_id=run_id,
+            event_type="run_started",
+            created_at=current_utc_time(),
+        ))
 
         self.db.commit()
         return run_id
@@ -71,6 +77,18 @@ class AgentRunService:
 
         row.duration_ms = duration_ms
         row.finished_at = current_utc_time()
+        self.db.add(AgentRunEvent(
+            run_id=run_id,
+            event_type=(
+                "run_finished"
+                if result is not None
+                else "run_failed"
+            ),
+            outcome=result.status if result is not None else None,
+            error_code=row.error_code,
+            duration_ms=duration_ms,
+            created_at=current_utc_time(),
+        ))
 
         self.db.commit()
 
