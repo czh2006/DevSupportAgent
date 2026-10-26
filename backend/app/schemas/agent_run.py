@@ -1,4 +1,9 @@
+from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.agent.runner import AgentResult
 
 
 class AgentRunCreate(BaseModel):
@@ -11,3 +16,25 @@ class AgentRunCreate(BaseModel):
         min_length=1,
         max_length=4000,
     )
+
+
+class AgentRunResponse(BaseModel):
+    id: str
+    session_id: str
+
+    execution_status: Literal[
+        "running",
+        "completed",
+        "failed",
+    ]
+
+    question: str
+    request_id: str | None
+    environment: str | None
+
+    result: AgentResult | None
+    error_code: str | None
+    duration_ms: int | None
+
+    created_at: datetime
+    finished_at: datetime | None

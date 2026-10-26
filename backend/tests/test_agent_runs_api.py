@@ -81,7 +81,10 @@ def test_missing_context_reaches_agent_as_none(
     )
 
     assert response.status_code == 200
-    assert response.json()["status"] == "needs_input"
+    assert (
+        response.json()["result"]["status"]
+        == "needs_input"
+    )
 
     fake_agent.run.assert_awaited_once_with(
         question="帮我排查",

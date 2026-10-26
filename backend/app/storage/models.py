@@ -111,3 +111,62 @@ class TroubleshootingContext(Base):
         default=current_utc_time,
         onupdate=current_utc_time,
     )
+
+class AgentRun(Base):
+    __tablename__ = "agent_runs"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+    )
+
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("troubleshooting_sessions.id"),
+        nullable=False,
+        index=True,
+    )
+
+    execution_status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    question: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    request_id: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+    )
+
+    environment: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+    )
+
+    result_json: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    error_code: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+
+    duration_ms: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+    )
+
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )

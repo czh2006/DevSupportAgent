@@ -20,11 +20,21 @@ from app.services.session_service import SessionService
 from app.storage.database import get_db
 from app.storage.models import TroubleshootingContext
 
+import logging
+from time import perf_counter
+
+from starlette.concurrency import run_in_threadpool
+
+from app.schemas.agent_run import AgentRunResponse
+from app.services.agent_run_service import AgentRunService
+
 
 router = APIRouter(
     prefix="/sessions",
     tags=["agent"],
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -84,9 +94,10 @@ async def get_agent(
 
 @router.post(
     "/{session_id}/agent-runs",
-    response_model=AgentResult,
+    response_model=AgentRunResponse,
 )
 async def run_agent(
+    session_id: str,
     payload: AgentRunCreate,
     context: Annotated[
         AgentContext,
@@ -96,9 +107,71 @@ async def run_agent(
         TroubleshootingAgent,
         Depends(get_agent),
     ],
-) -> AgentResult:
-    return await agent.run(
-        question=payload.question,
-        request_id=context.request_id,
-        environment=context.environment,
+    db: Annotated[
+        Session,
+        Depends(get_db),
+    ],
+) -> AgentRunResponse:
+    service = AgentRunService(db)
+
+    run_id = await run_in_threadpool(
+        service.start,
+        session_id,
+        payload.question,
+        context.request_id,
+        context.environment,
+    )
+
+    started = perf_counter()
+
+    try:
+        result = await agent.run(
+            question=payload.question,
+            request_id=context.request_id,
+            environment=context.environment,
+        )
+
+    except Exception:
+        try:
+            await run_in_threadpool(
+                service.finish,
+                run_id,
+                round(
+                    (perf_counter() - started) * 1000
+                ),
+                None,
+            )
+        except Exception:
+            logger.exception(
+                "agent_run_failure_save_failed run_id=%s",
+                run_id,
+            )
+
+        raise
+
+    return await run_in_threadpool(
+        service.finish,
+        run_id,
+        round(
+            (perf_counter() - started) * 1000
+        ),
+        result,
+    )
+
+
+@router.get(
+    "/{session_id}/agent-runs/{run_id}",
+    response_model=AgentRunResponse,
+)
+def get_agent_run(
+    session_id: str,
+    run_id: str,
+    db: Annotated[
+        Session,
+        Depends(get_db),
+    ],
+) -> AgentRunResponse:
+    return AgentRunService(db).get(
+        session_id,
+        run_id,
     )
