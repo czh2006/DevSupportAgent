@@ -211,3 +211,21 @@ class AgentRunEvent(Base):
         DateTime,
         nullable=False,
     )
+
+
+class AgentRunKey(Base):
+    """One idempotency key reserves one run within a session."""
+
+    __tablename__ = "agent_run_keys"
+
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("troubleshooting_sessions.id"), primary_key=True,
+    )
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_runs.id"), nullable=False, unique=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=current_utc_time,
+    )

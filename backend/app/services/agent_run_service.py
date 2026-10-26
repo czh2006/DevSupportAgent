@@ -1,11 +1,26 @@
+from dataclasses import dataclass
+from hashlib import sha256
+import json
 from uuid import uuid4
 
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.agent.runner import AgentResult
 from app.schemas.agent_run import AgentRunResponse
-from app.storage.models import AgentRun, AgentRunEvent, current_utc_time
+from app.storage.models import (
+    AgentRun,
+    AgentRunEvent,
+    AgentRunKey,
+    current_utc_time,
+)
+
+
+@dataclass(frozen=True)
+class RunReservation:
+    run: AgentRunResponse
+    created: bool
 
 
 class AgentRunService:
@@ -19,8 +34,40 @@ class AgentRunService:
         request_id: str | None,
         environment: str | None,
     ) -> str:
-        run_id = str(uuid4())
+        return self.reserve(
+            session_id, question, request_id, environment,
+        ).run.id
 
+    def reserve(
+        self,
+        session_id: str,
+        question: str,
+        request_id: str | None,
+        environment: str | None,
+        idempotency_key: str | None = None,
+    ) -> RunReservation:
+        fingerprint = sha256(json.dumps(
+            {
+                "question": question,
+                "request_id": request_id,
+                "environment": environment,
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")).hexdigest()
+        key_hash = (
+            sha256(idempotency_key.encode("utf-8")).hexdigest()
+            if idempotency_key is not None
+            else None
+        )
+
+        if idempotency_key is not None:
+            existing = self.db.get(AgentRunKey, (session_id, key_hash))
+            if existing is not None:
+                return self._replay(existing, fingerprint)
+
+        run_id = str(uuid4())
         self.db.add(
             AgentRun(
                 id=run_id,
@@ -32,15 +79,46 @@ class AgentRunService:
                 created_at=current_utc_time(),
             )
         )
-        self.db.flush()
-        self.db.add(AgentRunEvent(
-            run_id=run_id,
-            event_type="run_started",
-            created_at=current_utc_time(),
-        ))
+        try:
+            self.db.flush()
+            self.db.add(AgentRunEvent(
+                run_id=run_id,
+                event_type="run_started",
+                created_at=current_utc_time(),
+            ))
+            if idempotency_key is not None:
+                self.db.add(AgentRunKey(
+                    session_id=session_id,
+                    key_hash=key_hash,
+                    fingerprint=fingerprint,
+                    run_id=run_id,
+                ))
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            if idempotency_key is not None:
+                existing = self.db.get(AgentRunKey, (session_id, key_hash))
+                if existing is not None:
+                    return self._replay(existing, fingerprint)
+            raise
+        except Exception:
+            self.db.rollback()
+            raise
 
-        self.db.commit()
-        return run_id
+        return RunReservation(self.get(session_id, run_id), created=True)
+
+    def _replay(self, existing: AgentRunKey, fingerprint: str) -> RunReservation:
+        if existing.fingerprint != fingerprint:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "IDEMPOTENCY_CONFLICT",
+                    "message": "同一个幂等键不能用于不同的问题或排障上下文。",
+                },
+            )
+        return RunReservation(
+            self.get(existing.session_id, existing.run_id), created=False,
+        )
 
     def finish(
         self,

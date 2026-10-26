@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app.agent.runner import (
@@ -114,16 +114,24 @@ async def run_agent(
         Session,
         Depends(get_db),
     ],
+    idempotency_key: Annotated[
+        str | None,
+        Header(min_length=1, max_length=128),
+    ] = None,
 ) -> AgentRunResponse:
     service = AgentRunService(db)
 
-    run_id = await run_in_threadpool(
-        service.start,
+    reservation = await run_in_threadpool(
+        service.reserve,
         session_id,
         payload.question,
         context.request_id,
         context.environment,
+        idempotency_key,
     )
+    if not reservation.created:
+        return reservation.run
+    run_id = reservation.run.id
 
     started = perf_counter()
     event_service = AgentEventService(db)
