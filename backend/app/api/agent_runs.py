@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -5,6 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app.agent.runner import (
+    AgentRunCancelled,
     AgentResult,
     TroubleshootingAgent,
 )
@@ -38,6 +40,22 @@ router = APIRouter(
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def wait_for_agent_task(
+    agent_task: asyncio.Task[AgentResult],
+    run_id: str,
+) -> AgentResult:
+    while True:
+        try:
+            return await asyncio.shield(agent_task)
+        except asyncio.CancelledError:
+            if agent_task.cancelled():
+                raise
+            logger.info(
+                "agent_run_client_wait_cancelled; continuing run_id=%s",
+                run_id,
+            )
 
 
 @dataclass(frozen=True)
@@ -143,12 +161,30 @@ async def run_agent(
             event,
         )
 
+    async def should_cancel() -> bool:
+        return await run_in_threadpool(
+            service.is_cancel_requested,
+            run_id,
+        )
+
     try:
-        result = await agent.run(
-            question=payload.question,
-            request_id=context.request_id,
-            environment=context.environment,
-            on_event=on_event,
+        agent_task = asyncio.create_task(
+            agent.run(
+                question=payload.question,
+                request_id=context.request_id,
+                environment=context.environment,
+                on_event=on_event,
+                should_cancel=should_cancel,
+            )
+        )
+        result = await wait_for_agent_task(agent_task, run_id)
+
+    except AgentRunCancelled:
+        return await run_in_threadpool(
+            service.finish,
+            run_id,
+            round((perf_counter() - started) * 1000),
+            None,
         )
 
     except Exception:
@@ -179,6 +215,39 @@ async def run_agent(
     )
 
 
+@router.post(
+    "/{session_id}/agent-runs/cancel",
+    response_model=AgentRunResponse,
+)
+def cancel_agent_run_by_key(
+    session_id: str,
+    idempotency_key: Annotated[
+        str,
+        Header(min_length=1, max_length=128),
+    ],
+    db: Annotated[Session, Depends(get_db)],
+) -> AgentRunResponse:
+    return AgentRunService(db).request_cancel_by_key(
+        session_id,
+        idempotency_key,
+    )
+
+
+@router.post(
+    "/{session_id}/agent-runs/{run_id}/cancel",
+    response_model=AgentRunResponse,
+)
+def cancel_agent_run(
+    session_id: str,
+    run_id: str,
+    db: Annotated[Session, Depends(get_db)],
+) -> AgentRunResponse:
+    return AgentRunService(db).request_cancel(
+        session_id,
+        run_id,
+    )
+
+
 @router.get(
     "/{session_id}/agent-runs/{run_id}",
     response_model=AgentRunResponse,
@@ -206,4 +275,5 @@ def get_agent_events(
     run_id: str,
     db: Annotated[Session, Depends(get_db)],
 ) -> list[AgentEventResponse]:
+    AgentRunService(db).get(session_id, run_id)
     return AgentEventService(db).list(session_id, run_id)

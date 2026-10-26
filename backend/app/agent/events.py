@@ -23,6 +23,9 @@ class AgentEvent(BaseModel):
         "tool_failed",
         "run_finished",
         "run_failed",
+        "run_interrupted",
+        "run_cancel_requested",
+        "run_cancelled",
     ]
     step: int | None = Field(default=None, ge=1)
     operation: str | None = None

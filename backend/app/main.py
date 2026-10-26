@@ -4,7 +4,11 @@ from fastapi import FastAPI
 
 from app.api.sessions import router as sessions_router
 from app.core.config import settings
-from app.storage.database import Base, engine
+from app.storage.database import (
+    Base,
+    engine,
+    migrate_legacy_agent_run_keys,
+)
 from app.api.messages import router as messages_router
 from app.api.context import router as context_router
 from app.api.context_suggestions import router as context_suggestions_router
@@ -18,6 +22,7 @@ async def lifespan(app: FastAPI):
         exist_ok=True,
     )
     Base.metadata.create_all(bind=engine)
+    migrate_legacy_agent_run_keys(engine)
 
     try:
         yield

@@ -26,6 +26,9 @@ class AgentRunResponse(BaseModel):
         "running",
         "completed",
         "failed",
+        "interrupted",
+        "cancel_requested",
+        "cancelled",
     ]
 
     question: str

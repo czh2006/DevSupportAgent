@@ -14,7 +14,10 @@ class AgentEventService:
     def append(self, run_id: str, event: AgentEvent) -> None:
         try:
             run = self.db.get(AgentRun, run_id)
-            if run is None or run.execution_status != "running":
+            if run is None or run.execution_status not in {
+                "running",
+                "cancel_requested",
+            }:
                 raise RuntimeError("Cannot append to an inactive run.")
 
             self.db.add(AgentRunEvent(

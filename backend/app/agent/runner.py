@@ -1,5 +1,6 @@
 import asyncio
 import re
+from collections.abc import Awaitable, Callable
 from typing import Literal
 
 import httpx
@@ -39,6 +40,10 @@ class NoArguments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class AgentRunCancelled(Exception):
+    """Raised when a persisted cancellation request reaches a safe point."""
+
+
 SYSTEM_PROMPT = """你是开发者故障排查助手。
 先调用 get_request_log 获取当前会话已确认请求的日志，再给出回答。
 工具不需要参数，不得自行选择其他请求、项目或执行写操作。
@@ -66,6 +71,7 @@ class TroubleshootingAgent:
         environment: str | None,
         *,
         on_event: EventSink | None = None,
+        should_cancel: Callable[[], Awaitable[bool]] | None = None,
     ) -> AgentResult:
         evidence = None
         tool_calls = 0
@@ -78,6 +84,10 @@ class TroubleshootingAgent:
                 tool_calls=tool_calls,
                 error_code=error_code,
             )
+
+        async def check_cancellation() -> None:
+            if should_cancel is not None and await should_cancel():
+                raise AgentRunCancelled
 
         if not request_id or not environment:
             return finish(
@@ -122,6 +132,7 @@ class TroubleshootingAgent:
                 )
 
                 for model_step in range(1, 4):
+                    await check_cancellation()
                     async with observe_call(
                         "model",
                         model_step,
@@ -129,6 +140,8 @@ class TroubleshootingAgent:
                         operation="chat_completion",
                     ):
                         reply = await bound_model.ainvoke(messages)
+
+                    await check_cancellation()
 
                     if (
                         not isinstance(reply, AIMessage)
@@ -188,6 +201,7 @@ class TroubleshootingAgent:
                             "已达到本轮工具调用上限。",
                         )
 
+                    await check_cancellation()
                     tool_calls += 1
 
                     async with observe_call(
@@ -200,6 +214,8 @@ class TroubleshootingAgent:
                             call["args"]
                         )
                         evidence = LogEvidenceResult.model_validate(data)
+
+                    await check_cancellation()
 
                     if evidence.status == "not_found":
                         return finish(

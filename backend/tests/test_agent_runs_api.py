@@ -67,6 +67,7 @@ def test_agent_receives_saved_context(client, fake_agent):
         request_id=REQUEST_ID,
         environment="local",
         on_event=ANY,
+        should_cancel=ANY,
     )
 
 
@@ -92,6 +93,7 @@ def test_missing_context_reaches_agent_as_none(
         request_id=None,
         environment=None,
         on_event=ANY,
+        should_cancel=ANY,
     )
 
 
