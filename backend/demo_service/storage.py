@@ -11,6 +11,9 @@ from sqlalchemy import (
     select,
 )
 
+import sqlite3
+
+from sqlalchemy.pool import NullPool
 
 metadata = MetaData()
 
@@ -43,7 +46,24 @@ request_logs = Table(
 
 
 class LogStore:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, read_only: bool = False):
+        self.read_only = read_only
+
+        if read_only:
+            uri = path.resolve().as_uri() + "?mode=ro"
+
+            self.engine = create_engine(
+                "sqlite://",
+                poolclass=NullPool,
+                creator=lambda: sqlite3.connect(
+                    uri,
+                    uri=True,
+                    check_same_thread=False,
+                    timeout=3,
+                ),
+            )
+            return
+
         path.parent.mkdir(
             parents=True,
             exist_ok=True,
@@ -60,6 +80,9 @@ class LogStore:
         metadata.create_all(self.engine)
 
     def write(self, record: dict) -> None:
+        if self.read_only:
+            raise PermissionError("Log store is read-only.")
+
         with self.engine.begin() as connection:
             connection.execute(
                 request_logs.insert(),

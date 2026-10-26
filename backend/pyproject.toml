@@ -14,10 +14,9 @@ dependencies = [
     "sqlalchemy>=2.0,<3.0",
     "httpx>=0.27,<1.0",
 ]
-
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app*", "demo_service*"]
+include = ["app*", "demo_service*", "devsupport_mcp*"]
 
 [project.optional-dependencies]
 dev = [
@@ -27,4 +26,9 @@ dev = [
 llm = [
     "langchain==0.3.27",
     "langchain-openai==0.3.30",
+]
+
+mcp = [
+    "mcp==2.3.0",
+    "httpx2>=2.10,<3",
 ]
